@@ -33,19 +33,19 @@ namespace ScarySpringMan.Patches
                 ScarySpringManBase.mls.LogInfo("Timer start");
             }
 
-            flag = true;
+            flag = false;
 
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < 4; i++) // 'i' might be used to check each player which will come in handy for future idea
             {
                 if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) && StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) && Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
                 {
-                    flag = false;
-                    ScarySpringManBase.mls.LogInfo($"Flag should be false. Elapsed: {stopwatch.ElapsedMilliseconds}");
+                    flag = true;
+                    ScarySpringManBase.mls.LogInfo($"Flag should be true. Elapsed: {stopwatch.ElapsedMilliseconds}");
                     break;
                 }
 
             }
-            if (!(flag) && stopwatch.ElapsedMilliseconds > 15000)
+            if (flag && stopwatch.ElapsedMilliseconds > 15000)
             {
                 int num = 2;    //add random num stuff here currently set to 2 for testing
                 if (num == 2)
