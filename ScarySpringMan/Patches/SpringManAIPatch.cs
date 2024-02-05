@@ -51,6 +51,9 @@ namespace ScarySpringMan.Patches
                 if (num == 2)
                 {
                     ScarySpringManBase.mls.LogInfo("telling spring man to move");
+                    //trying to manually set animation speeds for springman before calling rpc
+                    __instance.creatureAnimator.SetFloat("walkSpeed", 6f);
+                    __instance.agent.speed = 6f;
                     __instance.SetAnimationGoServerRpc();
                     
                     stopwatch.Restart();
