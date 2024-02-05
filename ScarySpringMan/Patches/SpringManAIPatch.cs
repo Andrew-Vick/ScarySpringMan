@@ -20,6 +20,7 @@ namespace ScarySpringMan.Patches
         private static Stopwatch stopwatch = new Stopwatch();
         private static bool isTimerSet = false;
         private static bool flag = false;
+        private static bool multiplePlayers = false;
 
 
         [HarmonyPatch("Update")]
@@ -34,26 +35,36 @@ namespace ScarySpringMan.Patches
             }
 
             flag = false;
+            multiplePlayers = false;
 
-            for (int i = 0; i < 4; i++) // 'i' might be used to check each player which will come in handy for future idea
+            for (int i = 0; i < 4; i++) // an 'i' value is assinged to each player in a match so host is 0 and so on
+                // Issue i might have using 'i' to detect multiple people is that if anyone but the host is looking the i value will be greater than zero
+                // need to capture when 2 or more of the i values are satisfing the if statement below
             {
                 if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) && StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) && Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
                 {
+                    ScarySpringManBase.mls.LogInfo($"i value is {i}");
                     flag = true;
-                    ScarySpringManBase.mls.LogInfo($"Flag should be true. Elapsed: {stopwatch.ElapsedMilliseconds}");
-                    break;
+                    if(i > 1)   // More than one player looking at Spring Man
+                    {
+                        multiplePlayers = true;
+                        ScarySpringManBase.mls.LogInfo($"multiple Players is {multiplePlayers}");
+                    }
                 }
 
             }
             if (flag && stopwatch.ElapsedMilliseconds > 15000)
             {
-                int num = 2;    //add random num stuff here currently set to 2 for testing
-                if (num == 2)
+                int num = rnd.Next(1,50);    // add random num stuff here currently set to 2 for testing
+                if (num == 25)
                 {
                     ScarySpringManBase.mls.LogInfo("telling spring man to move");
-                    //trying to manually set animation speeds for springman before calling rpc
-                    __instance.creatureAnimator.SetFloat("walkSpeed", 6f);
-                    __instance.agent.speed = 6f;
+
+                    // Need to have both creatureAnimator and agent.speed set to have proper movement with animations/sounds
+                    __instance.creatureAnimator.SetFloat("walkSpeed", 14f); //still moved with only this line but it was a single jittery step
+                    __instance.agent.speed = 14f; // this line by itself acts similary to the above however there's no animation/sound it simply glides a bit towards you then stops
+
+                    // Getting Unity error when this is called that only owner can call this however the spring man will move for everyone on the server
                     __instance.SetAnimationGoServerRpc();
                     
                     stopwatch.Restart();
