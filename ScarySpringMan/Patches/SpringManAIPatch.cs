@@ -33,14 +33,14 @@ namespace ScarySpringMan.Patches
                 ScarySpringManBase.mls.LogInfo("Timer start");
             }
 
-            flag = false;
+            flag = true;
 
             for (int i = 0; i < 4; i++)
             {
                 if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) && StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) && Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
                 {
                     flag = false;
-                    ScarySpringManBase.mls.LogInfo($"Flag should be True. Elapsed: {stopwatch.ElapsedMilliseconds}");
+                    ScarySpringManBase.mls.LogInfo($"Flag should be false. Elapsed: {stopwatch.ElapsedMilliseconds}");
                     break;
                 }
 
@@ -50,11 +50,9 @@ namespace ScarySpringMan.Patches
                 int num = 2;    //add random num stuff here currently set to 2 for testing
                 if (num == 2)
                 {
-                    for(int i = 0; i < 4; i++)  
-                    {
-                        ScarySpringManBase.mls.LogInfo($"telling spring man to move {i}");
-                        __instance.SetAnimationGoServerRpc();
-                    }
+                    ScarySpringManBase.mls.LogInfo("telling spring man to move");
+                    __instance.SetAnimationGoServerRpc();
+                    
                     stopwatch.Restart();
                     ScarySpringManBase.mls.LogInfo("Spring Man should have moved");
                     ScarySpringManBase.mls.LogInfo("Timer reset");
