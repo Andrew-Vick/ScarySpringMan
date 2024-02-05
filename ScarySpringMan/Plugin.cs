@@ -21,7 +21,7 @@ namespace ScarySpringMan
 
         private static ScarySpringManBase Instance;
 
-        internal ManualLogSource mls;
+        internal static ManualLogSource mls;
 
         void Awake()
         {

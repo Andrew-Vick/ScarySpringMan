@@ -20,7 +20,7 @@ namespace ScarySpringMan.Patches
         private static Stopwatch stopwatch = new Stopwatch();
         private static bool isTimerSet = false;
         private static bool flag = false;
-        
+
 
         [HarmonyPatch("Update")]
         [HarmonyPostfix]
@@ -30,23 +30,34 @@ namespace ScarySpringMan.Patches
             {
                 stopwatch.Start();
                 isTimerSet = true;
+                ScarySpringManBase.mls.LogInfo("Timer start");
             }
+
+            flag = false;
 
             for (int i = 0; i < 4; i++)
             {
-                if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) && StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) &&Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
+                if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) && StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) && Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
                 {
                     flag = true;
+                    ScarySpringManBase.mls.LogInfo($"Flag should be True. Elapsed: {stopwatch.ElapsedMilliseconds}");
+                    break;
                 }
 
             }
             if (flag && stopwatch.ElapsedMilliseconds > 15000)
             {
-                int num = rnd.Next(1, 3);
+                int num = 2;
                 if (num == 2)
                 {
-                    __instance.SetAnimationGoServerRpc();
+                    for(int i = 0; i < 4; i++)
+                    {
+                        __instance.SetAnimationGoServerRpc();
+                        __instance.SetAnimationGoClientRpc();
+                    }
                     stopwatch.Restart();
+                    ScarySpringManBase.mls.LogInfo("Spring Man should have moved");
+                    ScarySpringManBase.mls.LogInfo("Timer reset");
                 }
             }
 
