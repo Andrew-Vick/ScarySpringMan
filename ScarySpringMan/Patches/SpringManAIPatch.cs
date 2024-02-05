@@ -47,10 +47,10 @@ namespace ScarySpringMan.Patches
             }
             if (flag && stopwatch.ElapsedMilliseconds > 15000)
             {
-                int num = 2;
+                int num = 2;    //add random num stuff here currently set to 2 for testing
                 if (num == 2)
                 {
-                    for(int i = 0; i < 4; i++)
+                    for(int i = 0; i < 4; i++)  
                     {
                         __instance.SetAnimationGoServerRpc();
                         __instance.SetAnimationGoClientRpc();
