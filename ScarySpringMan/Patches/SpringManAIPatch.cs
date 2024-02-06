@@ -74,7 +74,8 @@ namespace ScarySpringMan.Patches
             }
 
         }
-
+        /** The helper class is used to call SpringMan's server rpc function without any ownership so all players in the match can trigger it 
+         * Currently all players in a server can see it move however only the host can see it's animations **/
         private class SpringManServerHelper
         {
             private SpringManAI springManAI;
