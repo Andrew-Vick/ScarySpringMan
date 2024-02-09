@@ -74,7 +74,7 @@ namespace ScarySpringMan.Patches
         {
             __instance.StartCoroutine(MoveTowardsPlayer(__instance));
         }
-
+        // Need to tone down speed and distance moved as its a bit buggy in the current state with my Rpc handling
         private static IEnumerator MoveTowardsPlayer(SpringManAI __instance)
         {
             // BEWARE DISGUSTING MATH AHEAD 
