@@ -11,6 +11,8 @@ using Unity.Netcode;
 using UnityEngine;
 using static Unity.IO.LowLevel.Unsafe.AsyncReadManagerMetrics;
 using GameNetcodeStuff;
+using UnityEngine.AI;
+using System.Collections;
 
 
 namespace ScarySpringMan.Patches
@@ -24,6 +26,8 @@ namespace ScarySpringMan.Patches
         private static bool isTimerSet = false;
         private static bool flag = false;
         private static int amountOfPlayers = 0;
+
+        private static bool isHost = NetworkManager.Singleton.IsHost;
 
 
         [HarmonyPatch("Update")]
@@ -48,48 +52,77 @@ namespace ScarySpringMan.Patches
                 {
                     flag = true;
                     amountOfPlayers++;
-                    ScarySpringManBase.mls.LogInfo($"amount of players looking is {amountOfPlayers}");
                 }
 
             }
-            if (flag && stopwatch.ElapsedMilliseconds > 15000)
+            if (flag && stopwatch.ElapsedMilliseconds > 1000)
             {
                 int num = rnd.Next(1,50);    // add random num stuff here currently set to 2 for testing
                 if (num == 25)
                 {
-                    ScarySpringManBase.mls.LogInfo("telling spring man to move");
-
-                    // Need to have both creatureAnimator and agent.speed set to have proper movement with animations/sounds
-                    __instance.creatureAnimator.SetFloat("walkSpeed", 14f); //still moved with only this line but it was a single jittery step
-                    __instance.agent.speed = 14f; // this line by itself acts similary to the above however there's no animation/sound it simply glides a bit towards you then stops
-
-                    // Getting Unity error when this is called that only owner can call this however the spring man will move for everyone on the server
-                    var helper = new SpringManServerHelper(__instance);
-                    helper.TriggerServerRpc();
-                    
+                    SetAnimationGoServerRpc(__instance);  
                     stopwatch.Restart();
-                    ScarySpringManBase.mls.LogInfo("Spring Man should have moved");
-                    ScarySpringManBase.mls.LogInfo("Timer reset");
                 }
             }
-
         }
-        /** The helper class is used to call SpringMan's server rpc function without any ownership so all players in the match can trigger it 
-         * Currently all players in a server can see it move however only the host can see it's animations **/
-        private class SpringManServerHelper
+        // read it and weep with me
+
+        /** Use Coroutine for smooth movement of enemies. Since it takes longer than one frame for the SpringMan to move I needed something that acted as a loop 
+         * but wasn't a direct loop as that doesn't allow for Unity to update and render the rest of the game(freezes your game until done). Coroutine allows for 
+         * the movement to be handle as a sort of loop but still gives control back to Unity to allow for it to render and do other tasks. **/
+        public static void StartMovingCoroutine(SpringManAI __instance)
         {
-            private SpringManAI springManAI;
-
-            public SpringManServerHelper(SpringManAI springManAI)
-            {
-                this.springManAI = springManAI;
-            }
-
-            [ServerRpc(RequireOwnership = false)]
-            public void TriggerServerRpc()
-            {
-                springManAI.SetAnimationGoServerRpc();
-            }
+            __instance.StartCoroutine(MoveTowardsPlayer(__instance));
         }
+
+        private static IEnumerator MoveTowardsPlayer(SpringManAI __instance)
+        {
+            // BEWARE DISGUSTING MATH AHEAD 
+            float currentSpeed = 0f; 
+            float targetSpeed = 10f;
+            float acceleration = 2.5f;
+            Vector3 startPosition = __instance.transform.position;  // Grab SpringMan's current postion
+            Vector3 playerPosition = GameNetworkManager.Instance.localPlayerController.transform.position; // Grab target players current location
+            float totalDistance = Vector3.Distance(playerPosition, startPosition);  // Calculate the distance between the 2
+            float distanceMoved = 0f;
+
+            while (distanceMoved < totalDistance * 0.25f)   // Check to see if distanced moved is 25% of the total
+            {
+                /**Use Mathf.Lerp to slowly bring SpringMan up to speed. This removes the Jerkyness
+                 * of simply setting agent.speed and creatureAnimator to a value **/
+                currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);    
+                __instance.agent.speed = currentSpeed;  // Set the current speed to SpringMan's NavMeshAgent variable
+                __instance.creatureAnimator.SetFloat("walkSpeed", currentSpeed);    // Set the current speed to the creature animator to allow for animations to be played  
+
+                //Vector3 direction = (playerPosition - __instance.transform.position).normalized;
+
+                float step = currentSpeed * Time.deltaTime; // does what it says
+
+                Vector3 newPosition = Vector3.MoveTowards(__instance.transform.position, playerPosition, step); // Move SpringMan from his current postion to the player 
+                __instance.transform.position = newPosition;    // Grab his updated postion
+
+                distanceMoved += Vector3.Distance(__instance.transform.position, startPosition);    // Calculate how far SpringMan is from starting position
+                startPosition = __instance.transform.position;  // New start Position for next iteration
+
+                yield return null;
+            }
+
+            __instance.agent.speed = 0;
+            __instance.creatureAnimator.SetFloat("walkSpeed", 0);
+        }
+        [ServerRpc(RequireOwnership = false)]
+        public static void SetAnimationGoServerRpc(SpringManAI __instance)
+        {
+            SetAnimationGoClientRpc(__instance);
+        }
+
+        [ClientRpc]
+        public static void SetAnimationGoClientRpc(SpringManAI __instance)
+        {
+            StartMovingCoroutine(__instance);
+        }
+
+
     }
 }
+
