@@ -34,7 +34,7 @@ namespace ScarySpringMan.Patches
         [HarmonyPostfix]
         static void patchUpdate(SpringManAI __instance)
         {
-            if(!isTimerSet)
+            if (!isTimerSet)
             {
                 stopwatch.Start();
                 isTimerSet = true;
@@ -44,9 +44,7 @@ namespace ScarySpringMan.Patches
             flag = false;
             amountOfPlayers = 0;
 
-            for (int i = 0; i < 4; i++) // an 'i' value is assinged to each player in a match so host is 0 and so on
-                // Issue I might have using 'i' to detect multiple people is that if anyone but the host is looking the 'i' value will be greater than zero
-                // need to capture when 2 or more of the 'i' values are satisfing the if statement below
+            for (int i = 0; i < 4; i++) // i relates to clientId everyone gets one when they join starting at 0 for host
             {
                 if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) && StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) && Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
                 {
@@ -57,7 +55,7 @@ namespace ScarySpringMan.Patches
             }
             if (flag && stopwatch.ElapsedMilliseconds > 1000)
             {
-                int num = rnd.Next(1,50);    // add random num stuff here currently set to 2 for testing
+                int num = rnd.Next(1, 50);    // add random num stuff here currently set to 2 for testing
                 if (num == 25)
                 {
                     StartMovingCoroutineServerRpc(__instance);  // Call the serverRpc to begine movement
@@ -70,6 +68,7 @@ namespace ScarySpringMan.Patches
         /** Use Coroutine for smooth movement of enemies. Since it takes longer than one frame for the SpringMan to move I needed something that acted as a loop 
          * but wasn't a direct loop as that doesn't allow for Unity to update and render the rest of the game(freezes your game until done). Coroutine allows for 
          * the movement to be handle as a sort of loop but still gives control back to Unity to allow for it to render and do other tasks. **/
+
         public static void StartMovingCoroutineServerRpc(SpringManAI __instance)
         {
             __instance.StartCoroutine(MoveTowardsPlayerServerRpc(__instance));
@@ -87,17 +86,15 @@ namespace ScarySpringMan.Patches
             float targetSpeed = 5f;
             float acceleration = 1.5f;
 
-            NavMeshAgent agent = __instance.agent;
-
             Vector3 startPosition = __instance.transform.position;
             Vector3 targetPosition = GameNetworkManager.Instance.localPlayerController.transform.position;
 
-            agent.SetDestination(targetPosition);
+            __instance.agent.SetDestination(targetPosition);
 
             float totalDistance = Vector3.Distance(targetPosition, startPosition);
             float distanceMoved = 0f;
 
-            while (!agent.pathPending && distanceMoved < totalDistance * 0.10f)
+            while (!__instance.agent.pathPending && distanceMoved < totalDistance * 0.10f)
             {
                 currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
 
@@ -105,8 +102,8 @@ namespace ScarySpringMan.Patches
                 Vector3 newPosition = Vector3.MoveTowards(__instance.transform.position, targetPosition, step);
                 __instance.transform.position = newPosition; // NetworkTransform synchronizes this change
 
-                agent.speed = currentSpeed;
-                __instance.creatureAnimator.SetFloat("walkSpeed", currentSpeed);    // F this line of code in particular, it's not inheirtly setup for synching across the server which means mental olympic gymanstics for me
+                __instance.agent.speed = currentSpeed;
+                __instance.creatureAnimator.SetFloat("walkSpeed", currentSpeed);
                 UpdateAnimationClientRpc(__instance, currentSpeed);
 
                 distanceMoved += step; // Update the distance moved
@@ -114,12 +111,12 @@ namespace ScarySpringMan.Patches
                 if (targetDirection != Vector3.zero)
                 {
                     Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
-                    __instance.transform.rotation = Quaternion.Slerp(__instance.transform.rotation, targetRotation, Time.deltaTime * agent.angularSpeed);
+                    __instance.transform.rotation = Quaternion.Slerp(__instance.transform.rotation, targetRotation, Time.deltaTime * __instance.agent.angularSpeed);
                 }
                 yield return null;
             }
-            agent.isStopped = true;
-            agent.speed = 0;
+            __instance.agent.isStopped = true;
+            __instance.agent.speed = 0;
             UpdateAnimationClientRpc(__instance, 0f);
 
         }
@@ -128,13 +125,10 @@ namespace ScarySpringMan.Patches
         [ClientRpc]
         public static void UpdateAnimationClientRpc(SpringManAI __instance, float speed)
         {
+            // This method should directly update the animation speed on both the host and clients.
+            // Ensure `__instance` references are managed correctly if needed. This might be a simplified view.
             __instance.creatureAnimator.SetFloat("walkSpeed", speed);
-            RoundManager.PlayRandomClip(__instance.creatureVoice, __instance.springNoises, randomize: false);
-            
         }
-
-
     }
 
 }
-
