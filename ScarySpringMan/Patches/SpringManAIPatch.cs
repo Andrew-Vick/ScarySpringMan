@@ -60,7 +60,7 @@ namespace ScarySpringMan.Patches
                 int num = rnd.Next(1,50);    // add random num stuff here currently set to 2 for testing
                 if (num == 25)
                 {
-                    SetAnimationGoServerRpc(__instance);  
+                    StartMovingCoroutineServerRpc(__instance);  // Call the serverRpc to begine movement
                     stopwatch.Restart();
                 }
             }
@@ -70,59 +70,71 @@ namespace ScarySpringMan.Patches
         /** Use Coroutine for smooth movement of enemies. Since it takes longer than one frame for the SpringMan to move I needed something that acted as a loop 
          * but wasn't a direct loop as that doesn't allow for Unity to update and render the rest of the game(freezes your game until done). Coroutine allows for 
          * the movement to be handle as a sort of loop but still gives control back to Unity to allow for it to render and do other tasks. **/
-        public static void StartMovingCoroutine(SpringManAI __instance)
+        public static void StartMovingCoroutineServerRpc(SpringManAI __instance)
         {
-            __instance.StartCoroutine(MoveTowardsPlayer(__instance));
+            __instance.StartCoroutine(MoveTowardsPlayerServerRpc(__instance));
         }
         // Need to tone down speed and distance moved as its a bit buggy in the current state with my Rpc handling
-        private static IEnumerator MoveTowardsPlayer(SpringManAI __instance)
+        [ServerRpc(RequireOwnership = false)]
+        private static IEnumerator MoveTowardsPlayerServerRpc(SpringManAI __instance)
         {
-            // BEWARE DISGUSTING MATH AHEAD 
-            float currentSpeed = 0f; 
-            float targetSpeed = 10f;
-            float acceleration = 2.5f;
-            Vector3 startPosition = __instance.transform.position;  // Grab SpringMan's current postion
-            Vector3 playerPosition = GameNetworkManager.Instance.localPlayerController.transform.position; // Grab target players current location
-            float totalDistance = Vector3.Distance(playerPosition, startPosition);  // Calculate the distance between the 2
-            float distanceMoved = 0f;
-
-            while (distanceMoved < totalDistance * 0.25f)   // Check to see if distanced moved is 25% of the total
+            if (!NetworkManager.Singleton.IsServer) // Ensure we're on the server
             {
-                /**Use Mathf.Lerp to slowly bring SpringMan up to speed. This removes the Jerkyness
-                 * of simply setting agent.speed and creatureAnimator to a value **/
-                currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);    
-                __instance.agent.speed = currentSpeed;  // Set the current speed to SpringMan's NavMeshAgent variable
-                __instance.creatureAnimator.SetFloat("walkSpeed", currentSpeed);    // Set the current speed to the creature animator to allow for animations to be played  
-
-                //Vector3 direction = (playerPosition - __instance.transform.position).normalized;
-
-                float step = currentSpeed * Time.deltaTime; // does what it says
-
-                Vector3 newPosition = Vector3.MoveTowards(__instance.transform.position, playerPosition, step); // Move SpringMan from his current postion to the player 
-                __instance.transform.position = newPosition;    // Grab his updated postion
-
-                distanceMoved += Vector3.Distance(__instance.transform.position, startPosition);    // Calculate how far SpringMan is from starting position
-                startPosition = __instance.transform.position;  // New start Position for next iteration
-
-                yield return null;
+                yield break; // Exit if not on the server
             }
 
-            __instance.agent.speed = 0;
-            __instance.creatureAnimator.SetFloat("walkSpeed", 0);
-        }
-        [ServerRpc(RequireOwnership = false)]
-        public static void SetAnimationGoServerRpc(SpringManAI __instance)
-        {
-            SetAnimationGoClientRpc(__instance);
+            float currentSpeed = 0f;
+            float targetSpeed = 5f;
+            float acceleration = 1.5f;
+
+            NavMeshAgent agent = __instance.agent;
+
+            Vector3 startPosition = __instance.transform.position;
+            Vector3 targetPosition = GameNetworkManager.Instance.localPlayerController.transform.position;
+
+            agent.SetDestination(targetPosition);
+
+            float totalDistance = Vector3.Distance(targetPosition, startPosition);
+            float distanceMoved = 0f;
+
+            while (!agent.pathPending && distanceMoved < totalDistance * 0.10f)
+            {
+                currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
+
+                float step = currentSpeed * Time.deltaTime;
+                Vector3 newPosition = Vector3.MoveTowards(__instance.transform.position, targetPosition, step);
+                __instance.transform.position = newPosition; // NetworkTransform synchronizes this change
+
+                agent.speed = currentSpeed;
+                __instance.creatureAnimator.SetFloat("walkSpeed", currentSpeed);    // F this line of code in particular, it's not inheirtly setup for synching across the server which means mental olympic gymanstics for me
+                UpdateAnimationClientRpc(__instance, currentSpeed);
+
+                distanceMoved += step; // Update the distance moved
+                Vector3 targetDirection = targetPosition - __instance.transform.position;
+                if (targetDirection != Vector3.zero)
+                {
+                    Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
+                    __instance.transform.rotation = Quaternion.Slerp(__instance.transform.rotation, targetRotation, Time.deltaTime * agent.angularSpeed);
+                }
+                yield return null;
+            }
+            agent.isStopped = true;
+            agent.speed = 0;
+            UpdateAnimationClientRpc(__instance, 0f);
+
         }
 
+        // Believe this may be redundant as the coroutine should update the postion with NetworkTransorm via __instance.transform.position
         [ClientRpc]
-        public static void SetAnimationGoClientRpc(SpringManAI __instance)
+        public static void UpdateAnimationClientRpc(SpringManAI __instance, float speed)
         {
-            StartMovingCoroutine(__instance);
+            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
+            RoundManager.PlayRandomClip(__instance.creatureVoice, __instance.springNoises, randomize: false);
+            
         }
 
 
     }
+
 }
 
