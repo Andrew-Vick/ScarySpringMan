@@ -16,9 +16,9 @@ namespace ScarySpringMan
     public class ScarySpringManBase : BaseUnityPlugin
     {
 
-        private const string modGUID = "Goobius.ScarySpringMan";
-        private const string modName = "Scary Spring Man";
-        private const string modVersion = "1.0.0.0";
+        private const string modGUID = "Goobius.ScaryCoilHead";
+        private const string modName = "Scary Coil Head";
+        private const string modVersion = "0.1.0";
 
         private readonly Harmony harmony = new Harmony(modGUID);
 

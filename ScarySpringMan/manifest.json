@@ -1,0 +1,9 @@
+{
+  "name": "ScaryCoilHead",
+  "version_number": "0.1.0",
+  "website_url": "https://github.com/Andrew-Vick/ScarySpringMan",
+  "description": "This mod aims at making the Coil Heads more frightening than they already are. If you thought you were safe by simply looking at them think again... This mod adds a random chance that while you or your crewmates are looking at them, they will come after you.(won't kill)'",
+  "dependencies": [
+    "_goobius-ScaryCoilHead-0.1.0"
+  ]
+}
