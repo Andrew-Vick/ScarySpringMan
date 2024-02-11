@@ -15,6 +15,7 @@ using UnityEngine.AI;
 using Unity.Netcode.Components;
 using System.Collections;
 using System.Net.Security;
+using UnityEngine.Scripting.APIUpdating;
 
 
 namespace ScarySpringMan.Patches
@@ -24,16 +25,15 @@ namespace ScarySpringMan.Patches
     {
 
         private static System.Random rnd = new System.Random();
-        private static bool isTimerSet = false;
-        private static bool flag = false;
-        private static int amountOfPlayers = 0;
-
-        private static bool isHost = NetworkManager.Singleton.IsHost;
+        private static Stopwatch stopwatch = new Stopwatch();
+        private static bool movedRecently = false;
 
         [HarmonyPatch("Update")]
         [HarmonyPrefix]
         public static void DoAIIntervalPatch(SpringManAI __instance)
         {
+            // Check if a NetworkTransform exist on the Coil Head if not add one
+            // This is used by Unity to help sync up positioning
             if (!__instance.gameObject.GetComponent<NetworkTransform>())
                 __instance.gameObject.AddComponent<NetworkTransform>();
         }
@@ -45,7 +45,6 @@ namespace ScarySpringMan.Patches
 
             if (ShouldStartMoving(__instance))
             {
-                //StartMovingServerRpc(__instance);
                 __instance.StartCoroutine(MoveTowardsPlayer(__instance));
             }
         }
@@ -53,23 +52,25 @@ namespace ScarySpringMan.Patches
         static bool ShouldStartMoving(SpringManAI __instance)
         {
             bool flag = false;
-            int amountOfPlayers = 0;
 
-            for (int i = 0; i < StartOfRound.Instance.allPlayerScripts.Length; i++)
+            for (int i = 0; i < StartOfRound.Instance.allPlayerScripts.Length; i++) // Check eveyplayer in the server to see if they're looking at THIS Coil Head
             {
+                // Determine if a player is looking at the Coil Head
                 if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) &&
                     StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) &&
                     Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
                 {
                     flag = true;
-                    amountOfPlayers++;
                 }
             }
 
             if (flag)
             {
-                int num = rnd.Next(1, 100);
-                if (num == 100)
+                // Update gets called roughly 60 times a second. To ensure theres a 100% chance this mod runs in a minute we need 3600 values to choose from.
+                // 1/3600 * 60fps = 0.0167 per sec; 0.0167 * 60s = 1(100%)
+                // alternatively 60fps * 60sec in min = 3600
+                int num = rnd.Next(1, 1800); 
+                if (num == 123)
                 {
                     return true;
                 }
@@ -77,16 +78,10 @@ namespace ScarySpringMan.Patches
             return false;
         }
         // read it and weep with me
+        // Zeeker's forgot a move method in his code so had to make my own yay!
 
         /** Use Coroutine for smooth movement of enemies. Since it takes longer than one frame for the SpringMan to move I needed something that acted as a loop 
-         * but wasn't a direct loop as that doesn't allow for Unity to update and render the rest of the game(freezes your game until done). Coroutine allows for 
-         * the movement to be handle as a sort of loop but still gives control back to Unity to allow for it to render and do other tasks. **/
-        [ServerRpc(RequireOwnership = false)]
-        public static void StartMovingServerRpc(SpringManAI __instance)
-        {
-                __instance.StartCoroutine(MoveTowardsPlayer(__instance));
-        }
-        // Need to tone down speed and distance moved as its a bit buggy in the current state with my Rpc handling
+         * but allowed for Unity to take control again to update and render the rest of the game. **/
         private static IEnumerator MoveTowardsPlayer(SpringManAI __instance)
         {
 
@@ -103,23 +98,23 @@ namespace ScarySpringMan.Patches
             bool flag2 = false;
 
             // __instance.base to grab enemy ai stuff
+            // check to make sure players are 
+            for (int i = 0; i < StartOfRound.Instance.allPlayerScripts.Length; i++)
+            {
+                if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) &&
+                    StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) &&
+                    Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) < 0.3f)
+                {
+                    flag2 = true;
 
+                }
+            }
+            if (flag2)
+            {
+                yield break;
+            }
             while (!__instance.agent.pathPending && distanceMoved < totalDistance * 0.25f)
             {
-                for (int i = 0; i < StartOfRound.Instance.allPlayerScripts.Length; i++)
-                {
-                    if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) &&
-                        StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) &&
-                        Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
-                    {
-                        flag2 = true;
-                    
-                    }
-                }
-                if (flag2)
-                {
-                    yield break;
-                }
                 __instance.destination = RoundManager.Instance.GetNavMeshPosition(targetPosition, RoundManager.Instance.navHit, 2.7f);
                 currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
 
@@ -136,25 +131,34 @@ namespace ScarySpringMan.Patches
                     Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
                     __instance.transform.rotation = Quaternion.Slerp(__instance.transform.rotation, targetRotation, Time.deltaTime * __instance.agent.angularSpeed);
                 }
-                UpdateAnimationServerRpc(__instance, currentSpeed);
+                UpdateGoAnimationServerRpc(__instance, currentSpeed);
                 yield return null;
             }
-            __instance.agent.isStopped = true;
+            UpdateStopAnimationServerRpc(__instance, currentSpeed);
             __instance.agent.speed = 0;
+            // If you are using this code as inspiration or you're me looking back do not set __instance.agent.IsStopped = true here as even if you hand control back to the game it will use that variable and break the games code
 
         }
-
-        [ClientRpc]
-        public static void moveClientRpc(SpringManAI __instance)
-        {
-            __instance.StartCoroutine(MoveTowardsPlayer(__instance));
-        }
-
-        // Believe this may be redundant as the coroutine should update the postion with NetworkTransorm via __instance.transform.position
         [ServerRpc(RequireOwnership = false)]
-        public static void UpdateAnimationServerRpc(SpringManAI __instance, float speed)
+        public static void UpdateGoAnimationServerRpc(SpringManAI __instance, float speed)
         {
             __instance.creatureAnimator.SetFloat("walkSpeed", speed);
+        }
+
+        [ServerRpc(RequireOwnership = false)]
+        public static void UpdateStopAnimationServerRpc(SpringManAI __instance, float speed)
+        {
+            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
+            RoundManager.PlayRandomClip(__instance.creatureVoice, __instance.springNoises, randomize: false);
+            int animationNum = rnd.Next(1, 3);
+            if (animationNum == 2)
+            {
+                __instance.creatureAnimator.SetTrigger("springBoing");
+            }
+            else
+            {
+                __instance.creatureAnimator.SetTrigger("springBoingPosition2");
+            }
         }
     }
 
