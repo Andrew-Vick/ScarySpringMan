@@ -16,6 +16,8 @@ using Unity.Netcode.Components;
 using System.Collections;
 using System.Net.Security;
 using UnityEngine.Scripting.APIUpdating;
+using System.Diagnostics.Eventing.Reader;
+using BepInEx;
 
 
 namespace ScarySpringMan.Patches
@@ -26,28 +28,68 @@ namespace ScarySpringMan.Patches
 
         private static System.Random rnd = new System.Random();
         private static Stopwatch stopwatch = new Stopwatch();
-        private static bool movedRecently = false;
-
-        [HarmonyPatch("Update")]
-        [HarmonyPrefix]
-        public static void DoAIIntervalPatch(SpringManAI __instance)
-        {
-            // Check if a NetworkTransform exist on the Coil Head if not add one
-            // This is used by Unity to help sync up positioning
-            if (!__instance.gameObject.GetComponent<NetworkTransform>())
-                __instance.gameObject.AddComponent<NetworkTransform>();
-        }
+        private static bool RunningCoroutine = false;
+        private static bool lockGameCode = false;
 
         [HarmonyPatch("Update")]
         [HarmonyPostfix]
         static void patchUpdate(SpringManAI __instance)
         {
 
-            if (ShouldStartMoving(__instance))
+            if (ShouldStartMoving(__instance) && RunningCoroutine == false)
             {
+                // Start the coroutine and set flag to lock games code from runnign and messing with NavMeshAgent
+                RunningCoroutine = true;
+                lockGameCode = true;
                 __instance.StartCoroutine(MoveTowardsPlayer(__instance));
+
+                ScarySpringManBase.mls.LogInfo($"1. coroutine is set to run: {RunningCoroutine}");
+            } else if (ShouldStartMoving(__instance) && RunningCoroutine == true)
+            {
+                lockGameCode = true;
+                RunningCoroutine = true;
+                // a coroutine is running but still don't want the games update running as that overrides the mods AI logic
+                ScarySpringManBase.mls.LogInfo($"2. (set to still run) coroutine is set to run: {RunningCoroutine}");
+            }
+            else
+            {
+                // coroutine has finsihed so release lock and reset flag
+                lockGameCode = false;
+                RunningCoroutine = false;
             }
         }
+
+        // Two methods below are used to block the games code from running when the mod's coroutine is going
+        [HarmonyPatch("DoAIInterval")]
+        [HarmonyPrefix]
+        public static bool PrefixDoAIInterval()
+        {
+            if (lockGameCode)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        [HarmonyPatch("Update")]
+        [HarmonyPrefix]
+        public static bool prefixUpdate()
+        {
+            if (lockGameCode)
+            {
+                return false;
+            }
+            return true;
+        }
+
+        [HarmonyPatch("Update")]
+        [HarmonyPrefix]
+        public static void placeNetworkTransfom(SpringManAI __instance)
+        {
+            if (!__instance.gameObject.GetComponent<NetworkTransform>())
+                __instance.gameObject.AddComponent<NetworkTransform>();
+        }
+
 
         static bool ShouldStartMoving(SpringManAI __instance)
         {
@@ -69,7 +111,7 @@ namespace ScarySpringMan.Patches
                 // Update gets called roughly 60 times a second. To ensure theres a 100% chance this mod runs in a minute we need 3600 values to choose from.
                 // 1/3600 * 60fps = 0.0167 per sec; 0.0167 * 60s = 1(100%)
                 // alternatively 60fps * 60sec in min = 3600
-                int num = rnd.Next(1, 1800); 
+                int num = rnd.Next(1, 1800);
                 if (num == 123)
                 {
                     return true;
@@ -77,68 +119,97 @@ namespace ScarySpringMan.Patches
             }
             return false;
         }
+
         // read it and weep with me
         // Zeeker's forgot a move method in his code so had to make my own yay!
-
         /** Use Coroutine for smooth movement of enemies. Since it takes longer than one frame for the SpringMan to move I needed something that acted as a loop 
          * but allowed for Unity to take control again to update and render the rest of the game. **/
         private static IEnumerator MoveTowardsPlayer(SpringManAI __instance)
         {
-
+            if (!__instance.agent.enabled || !__instance.agent.isOnNavMesh)
+            {
+                if (!__instance.agent.Warp(__instance.transform.position))
+                {
+                    // Reset flags in case of error
+                    lockGameCode = false;
+                    RunningCoroutine = false;
+                    ScarySpringManBase.mls.LogInfo("Cannot place on NavMesh");
+                    yield break;
+                }
+            }
+            bool playerLooking = false;
             float currentSpeed = 0f;
             float targetSpeed = 10f;
             float acceleration = 2.5f;
+            __instance.agent.angularSpeed = 120f;
+            __instance.agent.stoppingDistance = 0.5f; 
+            __instance.agent.updatePosition = true;
+            __instance.agent.updateRotation = true; 
 
-            Vector3 startPosition = __instance.transform.position;
-            Vector3 targetPosition = GameNetworkManager.Instance.localPlayerController.transform.position;
+            Vector3 PlayerPosition = GameNetworkManager.Instance.localPlayerController.transform.position;
+            Vector3 directionToPlayer = PlayerPosition - __instance.transform.position;
+            Vector3 targetPosition = __instance.transform.position + (directionToPlayer * 0.5f);
+            float distanceToTarget = Vector3.Distance(__instance.transform.position, targetPosition);
+            float maxDistance = 10f;
 
-            float totalDistance = Vector3.Distance(targetPosition, startPosition);
-            float distanceMoved = 0f;
+            NavMeshHit hit;
 
-            bool flag2 = false;
-
-            // __instance.base to grab enemy ai stuff
-            // check to make sure players are 
-            for (int i = 0; i < StartOfRound.Instance.allPlayerScripts.Length; i++)
+            if (NavMesh.SamplePosition(targetPosition, out hit, maxDistance, NavMesh.AllAreas))
             {
-                if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) &&
-                    StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) &&
-                    Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) < 0.3f)
+                targetPosition = hit.position;
+            }
+            else
+            {
+                ScarySpringManBase.mls.LogInfo("Failed to find a point on the NavMesh near the target position.");
+            }
+            __instance.agent.SetDestination(targetPosition);
+            yield return new WaitWhile(() => __instance.agent.pathPending);
+            __instance.agent.isStopped = false;
+
+            // Main movement loop
+            while (distanceToTarget > __instance.agent.stoppingDistance)
+            {
+                for (int i = 0; i < StartOfRound.Instance.allPlayerScripts.Length; i++) // Check eveyplayer in the server to see if they're looking at THIS Coil Head
                 {
-                    flag2 = true;
-
+                    // Determine if a player is looking at the Coil Head
+                    if (__instance.PlayerIsTargetable(StartOfRound.Instance.allPlayerScripts[i]) &&
+                        StartOfRound.Instance.allPlayerScripts[i].HasLineOfSightToPosition(__instance.transform.position + Vector3.up * 1.6f, 68f) &&
+                        Vector3.Distance(StartOfRound.Instance.allPlayerScripts[i].gameplayCamera.transform.position, __instance.eye.position) > 0.3f)
+                    {
+                        playerLooking = true;
+                        break;
+                    }
                 }
-            }
-            if (flag2)
-            {
-                yield break;
-            }
-            while (!__instance.agent.pathPending && distanceMoved < totalDistance * 0.25f)
-            {
-                __instance.destination = RoundManager.Instance.GetNavMeshPosition(targetPosition, RoundManager.Instance.navHit, 2.7f);
+                if (!playerLooking)
+                {
+                    lockGameCode = false;
+                    RunningCoroutine = false;
+                    yield break;
+                }
+                if (Vector3.Distance(__instance.transform.position, targetPosition) <= __instance.agent.stoppingDistance + 0.5f)
+                {
+                    break;
+                }
+                distanceToTarget = Vector3.Distance(__instance.transform.position, targetPosition);
                 currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
-
-                float step = currentSpeed * Time.deltaTime;
-                Vector3 newPosition = Vector3.MoveTowards(__instance.transform.position, targetPosition, step);
-                __instance.transform.position = newPosition;
-
                 __instance.agent.speed = currentSpeed;
-
-                distanceMoved += step; // Update the distance moved
-                Vector3 targetDirection = targetPosition - __instance.transform.position;
-                if (targetDirection != Vector3.zero)
-                {
-                    Quaternion targetRotation = Quaternion.LookRotation(targetDirection);
-                    __instance.transform.rotation = Quaternion.Slerp(__instance.transform.rotation, targetRotation, Time.deltaTime * __instance.agent.angularSpeed);
-                }
                 UpdateGoAnimationServerRpc(__instance, currentSpeed);
+                ScarySpringManBase.mls.LogInfo($"Remaining Distance: {__instance.agent.remainingDistance}, Speed: {__instance.agent.speed}");
+                ScarySpringManBase.mls.LogInfo($"Agent Position: {__instance.transform.position}, Destination: {targetPosition}");
+                ScarySpringManBase.mls.LogInfo($"Path Status: {__instance.agent.pathStatus}, Path Complete: {!__instance.agent.pathPending}");
+
                 yield return null;
             }
-            UpdateStopAnimationServerRpc(__instance, currentSpeed);
             __instance.agent.speed = 0;
-            // If you are using this code as inspiration or you're me looking back do not set __instance.agent.IsStopped = true here as even if you hand control back to the game it will use that variable and break the games code
-
+            __instance.agent.isStopped = true;
+            __instance.agent.ResetPath();
+            UpdateStopAnimationServerRpc(__instance, 0);
+            ScarySpringManBase.mls.LogInfo("Movement coroutine completed.");
+            lockGameCode = false;
+            RunningCoroutine = false;
         }
+
+
         [ServerRpc(RequireOwnership = false)]
         public static void UpdateGoAnimationServerRpc(SpringManAI __instance, float speed)
         {

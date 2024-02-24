@@ -24,7 +24,7 @@ namespace ScarySpringMan
 
         private static ScarySpringManBase Instance;
 
-        internal static ManualLogSource mls;
+        internal static ManualLogSource mls = BepInEx.Logging.Logger.CreateLogSource(modGUID);
 
         void Awake()
         {
@@ -33,8 +33,6 @@ namespace ScarySpringMan
             {
                 Instance = this;
             }
-
-            mls = BepInEx.Logging.Logger.CreateLogSource(modGUID);
 
             mls.LogInfo("Scary Spring Man is ALIVE :)");
 
