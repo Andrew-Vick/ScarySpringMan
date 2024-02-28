@@ -141,7 +141,7 @@ namespace ScarySpringMan.Patches
             float currentSpeed = 0f;
             float targetSpeed = 10f;
             float acceleration = 2.5f;
-            __instance.agent.angularSpeed = 120f;
+            __instance.agent.angularSpeed = 270f;
             __instance.agent.stoppingDistance = 0.5f; 
             __instance.agent.updatePosition = true;
             __instance.agent.updateRotation = true; 
@@ -186,51 +186,88 @@ namespace ScarySpringMan.Patches
                     RunningCoroutine = false;
                     yield break;
                 }
-                if (Vector3.Distance(__instance.transform.position, targetPosition) <= __instance.agent.stoppingDistance + 0.5f)
+                if (Vector3.Distance(__instance.transform.position, targetPosition) <= __instance.agent.stoppingDistance + 0.5f)    // Check to see if enemy has overshot stopping point
                 {
                     break;
                 }
+
                 distanceToTarget = Vector3.Distance(__instance.transform.position, targetPosition);
                 currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
                 __instance.agent.speed = currentSpeed;
-                UpdateGoAnimationServerRpc(__instance, currentSpeed);
+                //UpdateGoAnimationServerRpc(__instance, currentSpeed);
+                UpdateGoAnimationServerRpc(__instance.GetComponent<NetworkObject>().NetworkObjectId, currentSpeed);
                 ScarySpringManBase.mls.LogInfo($"Remaining Distance: {__instance.agent.remainingDistance}, Speed: {__instance.agent.speed}");
                 ScarySpringManBase.mls.LogInfo($"Agent Position: {__instance.transform.position}, Destination: {targetPosition}");
                 ScarySpringManBase.mls.LogInfo($"Path Status: {__instance.agent.pathStatus}, Path Complete: {!__instance.agent.pathPending}");
 
                 yield return null;
             }
+            //UpdateStopAnimationServerRpc(__instance, 0);
+            UpdateStopAnimationServerRpc(__instance.GetComponent<NetworkObject>().NetworkObjectId, 0);
             __instance.agent.speed = 0;
             __instance.agent.isStopped = true;
             __instance.agent.ResetPath();
-            UpdateStopAnimationServerRpc(__instance, 0);
             ScarySpringManBase.mls.LogInfo("Movement coroutine completed.");
             lockGameCode = false;
             RunningCoroutine = false;
         }
 
-
         [ServerRpc(RequireOwnership = false)]
-        public static void UpdateGoAnimationServerRpc(SpringManAI __instance, float speed)
+        public static void UpdateGoAnimationServerRpc(ulong networkObjectId, float speed)
         {
-            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
+            UpdateGoAnimationClientRpc(networkObjectId, speed);
         }
 
         [ServerRpc(RequireOwnership = false)]
-        public static void UpdateStopAnimationServerRpc(SpringManAI __instance, float speed)
+        public static void UpdateStopAnimationServerRpc(ulong networkObjectId, float speed)
         {
-            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
-            RoundManager.PlayRandomClip(__instance.creatureVoice, __instance.springNoises, randomize: false);
-            int animationNum = rnd.Next(1, 3);
-            if (animationNum == 2)
+            UpdateStopAnimationClientRpc(networkObjectId, speed);
+        }
+
+        [ClientRpc]
+        public static void UpdateStopAnimationClientRpc(ulong networkObjectId, float speed)
+        {
+            var springManAI = FindSpringManAI(networkObjectId);
+            if (springManAI != null)
             {
-                __instance.creatureAnimator.SetTrigger("springBoing");
-            }
-            else
-            {
-                __instance.creatureAnimator.SetTrigger("springBoingPosition2");
+                springManAI.creatureAnimator.SetFloat("walkSpeed", speed);
+                RoundManager.PlayRandomClip(springManAI.creatureVoice, springManAI.springNoises, randomize: false);
+                int animationNum = rnd.Next(1, 3);
+                if (animationNum == 2)
+                {
+                    springManAI.creatureAnimator.SetTrigger("springBoing");
+                }
+                else
+                {
+                    springManAI.creatureAnimator.SetTrigger("springBoingPosition2");
+                }
             }
         }
+
+        [ClientRpc]
+        public static void UpdateGoAnimationClientRpc(ulong networkObjectId, float speed)
+        {
+            var springManAI = FindSpringManAI(networkObjectId);
+            if (springManAI != null)
+            {
+                springManAI.creatureAnimator.SetFloat("walkSpeed", speed);
+            }
+        }
+
+        private static SpringManAI FindSpringManAI(ulong networkObjectId)
+        {
+            var networkObject = NetworkManager.Singleton.SpawnManager.SpawnedObjects[networkObjectId];
+            if (networkObject != null)
+            {
+                ScarySpringManBase.mls.LogInfo($"{networkObject}");
+                return networkObject.GetComponent<SpringManAI>();
+                
+            }
+            ScarySpringManBase.mls.LogInfo($"didnt find network object");
+            return null;
+            
+        }
+
     }
 
 }
