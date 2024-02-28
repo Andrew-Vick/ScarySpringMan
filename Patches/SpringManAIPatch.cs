@@ -211,6 +211,30 @@ namespace ScarySpringMan.Patches
             lockGameCode = false;
             RunningCoroutine = false;
         }
+        /**
+         * NEITHER OF THESE RPC METHODS WORK :(
+         */
+        //[ServerRpc(RequireOwnership = false)]
+        //public static void UpdateGoAnimationServerRpc(SpringManAI __instance, float speed)
+        //{
+        //    __instance.creatureAnimator.SetFloat("walkSpeed", speed);
+        //}
+
+        //[ServerRpc(RequireOwnership = false)]
+        //public static void UpdateStopAnimationServerRpc(SpringManAI __instance, float speed)
+        //{
+        //    __instance.creatureAnimator.SetFloat("walkSpeed", speed);
+        //    RoundManager.PlayRandomClip(__instance.creatureVoice, __instance.springNoises, randomize: false);
+        //    int animationNum = rnd.Next(1, 3);
+        //    if (animationNum == 2)
+        //    {
+        //        __instance.creatureAnimator.SetTrigger("springBoing");
+        //    }
+        //    else
+        //    {
+        //        __instance.creatureAnimator.SetTrigger("springBoingPosition2");
+        //    }
+        //}
 
         [ServerRpc(RequireOwnership = false)]
         public static void UpdateGoAnimationServerRpc(ulong networkObjectId, float speed)
@@ -261,11 +285,11 @@ namespace ScarySpringMan.Patches
             {
                 ScarySpringManBase.mls.LogInfo($"{networkObject}");
                 return networkObject.GetComponent<SpringManAI>();
-                
+
             }
             ScarySpringManBase.mls.LogInfo($"didnt find network object");
             return null;
-            
+
         }
 
     }
