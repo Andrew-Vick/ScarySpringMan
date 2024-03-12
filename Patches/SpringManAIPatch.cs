@@ -20,6 +20,11 @@ using System.Diagnostics.Eventing.Reader;
 using BepInEx;
 
 
+// Starting to think the animation issue arises from a desync in game lock flags between host and client since only the host can control the movement code.
+// One weired behaviour is Client Rpc log will not appear on the client side but if I place in a native game method that contains logs those will apear.
+// May be issue where the client jumps back to games code while host is still running modded code so client can't access animation calls in client Rpc
+
+
 namespace ScarySpringMan.Patches
 {
     [HarmonyPatch(typeof(SpringManAI))]
@@ -28,8 +33,10 @@ namespace ScarySpringMan.Patches
 
         private static System.Random rnd = new System.Random();
         private static Stopwatch stopwatch = new Stopwatch();
-        private static bool RunningCoroutine = false;
-        private static bool lockGameCode = false;
+
+        public static bool SpringMoving = false;
+
+
 
         [HarmonyPatch("Update")]
         [HarmonyPostfix]
@@ -37,53 +44,12 @@ namespace ScarySpringMan.Patches
         {
             if (__instance.IsOwner)
             {
-
-                if (ShouldStartMoving(__instance) && RunningCoroutine == false)
+                if (ShouldStartMoving(__instance))
                 {
-                    // Start the coroutine and set flag to lock games code from runnign and messing with NavMeshAgent
-                    RunningCoroutine = true;
-                    lockGameCode = true;
                     __instance.StartCoroutine(MoveTowardsPlayer(__instance));
-
-                    ScarySpringManBase.mls.LogInfo($"1. coroutine is set to run: {RunningCoroutine}");
-                }
-                else if (ShouldStartMoving(__instance) && RunningCoroutine == true)
-                {
-                    lockGameCode = true;
-                    RunningCoroutine = true;
-                    // a coroutine is running but still don't want the games update running as that overrides the mods AI logic
-                    ScarySpringManBase.mls.LogInfo($"2. (set to still run) coroutine is set to run: {RunningCoroutine}");
-                }
-                else
-                {
-                    // coroutine has finsihed so release lock and reset flag
-                    lockGameCode = false;
-                    RunningCoroutine = false;
+                    
                 }
             }
-        }
-
-        // Two methods below are used to block the games code from running when the mod's coroutine is going
-        [HarmonyPatch("DoAIInterval")]
-        [HarmonyPrefix]
-        public static bool PrefixDoAIInterval()
-        {
-            if (lockGameCode)
-            {
-                return false;
-            }
-            return true;
-        }
-
-        [HarmonyPatch("Update")]
-        [HarmonyPrefix]
-        public static bool prefixUpdate()
-        {
-            if (lockGameCode)
-            {
-                return false;
-            }
-            return true;
         }
 
         [HarmonyPatch("Update")]
@@ -91,7 +57,9 @@ namespace ScarySpringMan.Patches
         public static void placeNetworkTransfom(SpringManAI __instance)
         {
             if (!__instance.gameObject.GetComponent<NetworkTransform>())
-                __instance.gameObject.AddComponent<NetworkTransform>();
+            __instance.gameObject.AddComponent<NetworkTransform>();
+
+            
         }
 
 
@@ -126,53 +94,25 @@ namespace ScarySpringMan.Patches
         // read it and weep with me
         private static IEnumerator MoveTowardsPlayer(SpringManAI __instance)
         {
-
-            /**
-             * This trap is the route cause of animations not updating, client falls into the trap and breaks out of coroutine, server does not
-             * 
-             * server = targeted player
-             * client = bystander
-             */
-
             if (!__instance.agent.enabled || !__instance.agent.isOnNavMesh)
             {
                 if (!__instance.agent.Warp(__instance.transform.position))
                 {
                     // Reset flags in case of error
-                    lockGameCode = false;
-                    RunningCoroutine = false;
                     ScarySpringManBase.mls.LogInfo("Cannot place on NavMesh");
                     yield break;
                 }
             }
-
-            //if (!__instance.agent.enabled || !__instance.agent.isOnNavMesh)
-            //{
-            //    Vector3 nearestPoint;
-            //    if (NavMesh.SamplePosition(__instance.transform.position, out NavMeshHit hit2, 10.0f, NavMesh.AllAreas))
-            //    {
-            //        nearestPoint = hit2.position;
-            //        __instance.agent.Warp(nearestPoint);
-            //    }
-            //    else
-            //    {
-            //        // Reset flags in case of error
-            //        lockGameCode = false;
-            //        RunningCoroutine = false;
-            //        ScarySpringManBase.mls.LogInfo("Cannot place on NavMesh");
-            //        yield break;
-            //    }
-            //}
 
             bool playerLooking = false;
             float currentSpeed = 0f;
             float targetSpeed = 14.5f;
             float acceleration = 2.5f;
             __instance.agent.angularSpeed = 270f;
-            __instance.agent.stoppingDistance = 0.5f; 
+            __instance.agent.stoppingDistance = 0.5f;
             __instance.agent.updatePosition = true;
             __instance.agent.updateRotation = true;
-            
+
             Vector3 PlayerPosition = GameNetworkManager.Instance.localPlayerController.transform.position;
             Vector3 directionToPlayer = PlayerPosition - __instance.transform.position;
             Vector3 targetPosition = __instance.transform.position + (directionToPlayer * 0.5f);
@@ -194,6 +134,7 @@ namespace ScarySpringMan.Patches
             __instance.agent.isStopped = false;
 
             // Main movement loop
+            
             while (distanceToTarget > __instance.agent.stoppingDistance)
             {
                 for (int i = 0; i < StartOfRound.Instance.allPlayerScripts.Length; i++) // Check eveyplayer in the server to see if they're looking at THIS Coil Head
@@ -207,10 +148,8 @@ namespace ScarySpringMan.Patches
                         break;
                     }
                 }
-                if (!playerLooking)
+                if (!playerLooking||!__instance.IsOwner)
                 {
-                    lockGameCode = false;
-                    RunningCoroutine = false;
                     yield break;
                 }
                 if (Vector3.Distance(__instance.transform.position, targetPosition) <= __instance.agent.stoppingDistance + 0.5f)    // Check to see if enemy has overshot stopping point
@@ -218,16 +157,13 @@ namespace ScarySpringMan.Patches
                     break;
                 }
 
+
                 distanceToTarget = Vector3.Distance(__instance.transform.position, targetPosition);
                 currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
                 __instance.agent.speed = currentSpeed;
-                
-                UpdateGoServerRpc(__instance, currentSpeed);
 
-                ScarySpringManBase.mls.LogInfo($"Remaining Distance: {__instance.agent.remainingDistance}, Speed: {__instance.agent.speed}");
-                ScarySpringManBase.mls.LogInfo($"Agent Position: {__instance.transform.position}, Destination: {targetPosition}");
-                ScarySpringManBase.mls.LogInfo($"Path Status: {__instance.agent.pathStatus}, Path Complete: {!__instance.agent.pathPending}");
 
+                UpdateGoServerRpc(__instance);
                 yield return null;
             }
 
@@ -237,36 +173,34 @@ namespace ScarySpringMan.Patches
             UpdateStopServerRpc(__instance, 0);
             __instance.agent.ResetPath();
             ScarySpringManBase.mls.LogInfo("Movement coroutine completed.");
-            lockGameCode = false;
-            RunningCoroutine = false;
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        public static void UpdateGoServerRpc(SpringManAI __instance, float speed)
-        {
-            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
-            //UpdateGoAnimationClientRpc(__instance, speed);
-        }
-
-        [ServerRpc(RequireOwnership = false)]
+        [ServerRpc]
         public static void UpdateStopServerRpc(SpringManAI __instance, float speed)
         {
-            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
-            //UpdateStopAnimationClientRpc(__instance, speed);
+            ScarySpringManBase.mls.LogInfo($"Host called stop animation");
+            UpdateStopAnimationClientRpc(__instance, speed);
+        }
+
+        [ServerRpc]
+        public static void UpdateGoServerRpc(SpringManAI __instance)
+        {
+            UpdateGoAnimationClientRpc(__instance);
         }
 
         [ClientRpc]
-        public static void UpdateGoAnimationClientRpc(SpringManAI __instance, float speed)
+        public static void UpdateGoAnimationClientRpc(SpringManAI __instance)
         {
-
-            ScarySpringManBase.mls.LogInfo("client got this");
-            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
+            // CLient logs never show this line
+            __instance.agent.speed = 14.5f;
+            __instance.agent.isStopped = false;
+            __instance.creatureAnimator.SetFloat("walkSpeed", 14.5f);
         }
 
         [ClientRpc]
         public static void UpdateStopAnimationClientRpc(SpringManAI __instance, float speed)
         {
-            ScarySpringManBase.mls.LogInfo("client got this");
+            ScarySpringManBase.mls.LogInfo("Old Client Rpc for stop animation");
             __instance.creatureAnimator.SetFloat("walkSpeed", speed);
             RoundManager.PlayRandomClip(__instance.creatureVoice, __instance.springNoises, randomize: false);
             int animationNum = rnd.Next(1, 3);
@@ -278,6 +212,13 @@ namespace ScarySpringMan.Patches
             {
                 __instance.creatureAnimator.SetTrigger("springBoingPosition2");
             }
+        }
+
+        public static void animationGo(SpringManAI __instance, float speed)
+        {
+
+            ScarySpringManBase.mls.LogInfo($"unlock games code on client side and play go animation; animationGo method");
+            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
         }
 
     }
