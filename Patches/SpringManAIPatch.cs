@@ -34,8 +34,6 @@ namespace ScarySpringMan.Patches
         private static System.Random rnd = new System.Random();
         private static Stopwatch stopwatch = new Stopwatch();
 
-        public static bool SpringMoving = false;
-
 
 
         [HarmonyPatch("Update")]
@@ -61,6 +59,7 @@ namespace ScarySpringMan.Patches
 
             
         }
+
 
 
         static bool ShouldStartMoving(SpringManAI __instance)
@@ -112,6 +111,7 @@ namespace ScarySpringMan.Patches
             __instance.agent.stoppingDistance = 0.5f;
             __instance.agent.updatePosition = true;
             __instance.agent.updateRotation = true;
+            bool SpringMoving = false;
 
             Vector3 PlayerPosition = GameNetworkManager.Instance.localPlayerController.transform.position;
             Vector3 directionToPlayer = PlayerPosition - __instance.transform.position;
@@ -161,64 +161,19 @@ namespace ScarySpringMan.Patches
                 distanceToTarget = Vector3.Distance(__instance.transform.position, targetPosition);
                 currentSpeed = Mathf.Lerp(currentSpeed, targetSpeed, acceleration * Time.deltaTime);
                 __instance.agent.speed = currentSpeed;
-
-
-                UpdateGoServerRpc(__instance);
+                //UpdateGoServerRpc(__instance);
+                __instance.SetAnimationGoServerRpc();
+                
                 yield return null;
             }
 
             __instance.agent.speed = 0;
             __instance.agent.isStopped = true;
 
-            UpdateStopServerRpc(__instance, 0);
+            //UpdateStopServerRpc(__instance);
+            __instance.SetAnimationStopServerRpc();
             __instance.agent.ResetPath();
             ScarySpringManBase.mls.LogInfo("Movement coroutine completed.");
-        }
-
-        [ServerRpc]
-        public static void UpdateStopServerRpc(SpringManAI __instance, float speed)
-        {
-            ScarySpringManBase.mls.LogInfo($"Host called stop animation");
-            UpdateStopAnimationClientRpc(__instance, speed);
-        }
-
-        [ServerRpc]
-        public static void UpdateGoServerRpc(SpringManAI __instance)
-        {
-            UpdateGoAnimationClientRpc(__instance);
-        }
-
-        [ClientRpc]
-        public static void UpdateGoAnimationClientRpc(SpringManAI __instance)
-        {
-            // CLient logs never show this line
-            __instance.agent.speed = 14.5f;
-            __instance.agent.isStopped = false;
-            __instance.creatureAnimator.SetFloat("walkSpeed", 14.5f);
-        }
-
-        [ClientRpc]
-        public static void UpdateStopAnimationClientRpc(SpringManAI __instance, float speed)
-        {
-            ScarySpringManBase.mls.LogInfo("Old Client Rpc for stop animation");
-            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
-            RoundManager.PlayRandomClip(__instance.creatureVoice, __instance.springNoises, randomize: false);
-            int animationNum = rnd.Next(1, 3);
-            if (animationNum == 2)
-            {
-                __instance.creatureAnimator.SetTrigger("springBoing");
-            }
-            else
-            {
-                __instance.creatureAnimator.SetTrigger("springBoingPosition2");
-            }
-        }
-
-        public static void animationGo(SpringManAI __instance, float speed)
-        {
-
-            ScarySpringManBase.mls.LogInfo($"unlock games code on client side and play go animation; animationGo method");
-            __instance.creatureAnimator.SetFloat("walkSpeed", speed);
         }
 
     }

@@ -22,17 +22,17 @@ namespace ScarySpringMan
 
         private readonly Harmony harmony = new Harmony(modGUID);
 
-        private static ScarySpringManBase Instance;
+        public static ScarySpringManBase Instance;
 
         internal static ManualLogSource mls = BepInEx.Logging.Logger.CreateLogSource(modGUID);
 
         void Awake()
         {
-            //NetcodePatcher();
-            //if (Instance == null)
-            //{
-            //    Instance = this;
-            //}
+            NetcodePatcher();
+            if (Instance == null)
+            {
+                Instance = this;
+            }
 
             mls.LogInfo("Scary Spring Man is ALIVE :)");
 
@@ -41,22 +41,22 @@ namespace ScarySpringMan
 
         }
 
-        //private static void NetcodePatcher()
-        //{
-        //    var types = Assembly.GetExecutingAssembly().GetTypes();
-        //    foreach (var type in types)
-        //    {
-        //        var methods = type.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-        //        foreach (var method in methods)
-        //        {
-        //            var attributes = method.GetCustomAttributes(typeof(RuntimeInitializeOnLoadMethodAttribute), false);
-        //            if (attributes.Length > 0)
-        //            {
-        //                method.Invoke(null, null);
-        //            }
-        //        }
-        //    }
-        //}
+        private static void NetcodePatcher()
+        {
+            var types = Assembly.GetExecutingAssembly().GetTypes();
+            foreach (var type in types)
+            {
+                var methods = type.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
+                foreach (var method in methods)
+                {
+                    var attributes = method.GetCustomAttributes(typeof(RuntimeInitializeOnLoadMethodAttribute), false);
+                    if (attributes.Length > 0)
+                    {
+                        method.Invoke(null, null);
+                    }
+                }
+            }
+        }
 
     }
 }
