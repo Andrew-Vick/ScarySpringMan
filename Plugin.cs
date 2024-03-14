@@ -18,44 +18,20 @@ namespace ScarySpringMan
 
         private const string modGUID = "Goobius.ScaryCoilHead";
         private const string modName = "Scary Coil Head";
-        private const string modVersion = "0.1.0";
+        private const string modVersion = "0.5.1";
 
         private readonly Harmony harmony = new Harmony(modGUID);
-
-        public static ScarySpringManBase Instance;
 
         internal static ManualLogSource mls = BepInEx.Logging.Logger.CreateLogSource(modGUID);
 
         void Awake()
         {
-            NetcodePatcher();
-            if (Instance == null)
-            {
-                Instance = this;
-            }
 
             mls.LogInfo("Scary Spring Man is ALIVE :)");
 
             harmony.PatchAll(typeof(ScarySpringManBase));
             harmony.PatchAll(typeof(SpringManAIPatch));
 
-        }
-
-        private static void NetcodePatcher()
-        {
-            var types = Assembly.GetExecutingAssembly().GetTypes();
-            foreach (var type in types)
-            {
-                var methods = type.GetMethods(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static);
-                foreach (var method in methods)
-                {
-                    var attributes = method.GetCustomAttributes(typeof(RuntimeInitializeOnLoadMethodAttribute), false);
-                    if (attributes.Length > 0)
-                    {
-                        method.Invoke(null, null);
-                    }
-                }
-            }
         }
 
     }
